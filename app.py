@@ -147,6 +147,62 @@ def detect_language(text: str) -> str:
 
     return "English"
 
+def validate_translation_quality(translation: str, target_language: str) -> bool:
+    """Validate if the translation quality is acceptable."""
+    if not translation or not translation.strip():
+        return False
+
+    # Check for common indicators of poor translation
+    poor_indicators = [
+        "i don't know",
+        "i cannot",
+        "i'm sorry",
+        "unable to",
+        "not sure",
+        "don't understand",
+        "cannot translate",
+        "no translation",
+        "not available",
+        "error",
+        "invalid",
+        "unknown",
+        "???",
+        "...",
+        "[untranslatable]",
+        "gibberish",
+        "jargon",
+        "unclear"
+    ]
+
+    translation_lower = translation.lower()
+
+    # Check if translation contains poor quality indicators
+    if any(indicator in translation_lower for indicator in poor_indicators):
+        return False
+
+    # Check for repetitive patterns (potential jargon)
+    words = translation.split()
+    if len(words) > 3:
+        # Check for excessive repetition
+        word_counts = {}
+        for word in words:
+            word_counts[word] = word_counts.get(word, 0) + 1
+
+        # If any word appears more than 3 times in a short translation, it might be jargon
+        if any(count > 3 for count in word_counts.values()):
+            return False
+
+    # Check minimum length (too short might indicate incomplete translation)
+    if len(translation.strip()) < 2:
+        return False
+
+    # Check for excessive special characters (might indicate encoding issues)
+    special_char_count = sum(1 for char in translation if not char.isalnum() and char not in " .,!?;:'-")
+    if special_char_count > len(translation) * 0.3:  # More than 30% special characters
+        return False
+
+    return True
+
 @app.on_event("startup")
 async def startup_event():
     """Load dictionary on startup."""
@@ -258,7 +314,7 @@ async def translate(request: TranslationRequest):
 Reference vocabulary and translations:
 {dictionary_content}
 
-Use this knowledge naturally in your translations without mentioning it explicitly."""
+Use this knowledge naturally in your translations without mentioning it explicitly. Only provide the direct translation without explanations or references to documents."""
             },
             {
                 "role": "user",
@@ -268,6 +324,16 @@ Use this knowledge naturally in your translations without mentioning it explicit
 
         # Generate translation
         translation = generate_with_retry(MODEL, messages, XAI_API_KEY)
+
+        # Validate translation quality
+        if not validate_translation_quality(translation, request.target_language):
+            return {
+                "status": "limited",
+                "original_text": request.text,
+                "translation": "The limited dataset does not allow me to provide an accurate translation at the moment. This will be improved in future versions.",
+                "source_language": request.source_language,
+                "target_language": request.target_language
+            }
 
         return {
             "status": "success",
@@ -288,20 +354,29 @@ async def dictionary_lookup(word: str, target_language: str = "French"):
         messages = [
             {
                 "role": "system",
-                "content": f"""You are a multilingual AI assistant with expertise in Ghomala', French, and English. You have been fine-tuned to understand and translate between these languages naturally. Provide the translation for the requested word in {target_language}.
+                "content": f"""You are a multilingual AI assistant with expertise in Ghomala', French, and English. You have been fine-tuned to understand and translate between these languages naturally. Provide only the direct translation for the requested word in {target_language}.
 
 Reference vocabulary and translations:
 {dictionary_content}
 
-Use this knowledge naturally without mentioning it explicitly."""
+Use this knowledge naturally without mentioning it explicitly. Only provide the translation, no explanations."""
             },
             {
                 "role": "user",
-                "content": f"""What is the translation of "{word}" in {target_language}? If you don't know this word, please say "Translation not available"."""
+                "content": f"""What is the translation of "{word}" in {target_language}?"""
             }
         ]
 
         result = generate_with_retry(MODEL, messages, XAI_API_KEY)
+
+        # Validate translation quality
+        if not validate_translation_quality(result, target_language):
+            return {
+                "status": "limited",
+                "word": word,
+                "translation": "The limited dataset does not allow me to provide an accurate translation at the moment. This will be improved in future versions.",
+                "target_language": target_language
+            }
 
         return {
             "status": "success",
