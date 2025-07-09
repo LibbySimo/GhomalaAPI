@@ -203,6 +203,51 @@ def validate_translation_quality(translation: str, target_language: str) -> bool
 
     return True
 
+def is_translation_related_query(text: str) -> bool:
+    """Check if the query is related to translation or the supported languages."""
+    if not text:
+        return False
+
+    text_lower = text.lower()
+
+    # Translation-related keywords
+    translation_keywords = [
+        "translate", "translation", "traduis", "traduire", "traduction",
+        "ghomala", "ghomàla", "français", "french", "english", "anglais",
+        "mean", "means", "meaning", "signifie", "veut dire", "what is",
+        "qu'est-ce", "comment dit-on", "how do you say", "dire",
+        "language", "langue", "mot", "word", "phrase", "sentence",
+        "dictionary", "dictionnaire", "vocabulaire", "vocabulary"
+    ]
+
+    # Check if query contains translation-related terms
+    if any(keyword in text_lower for keyword in translation_keywords):
+        return True
+
+    # Check if query contains words from supported languages
+    ghomala_words = ["ndzí", "mbə", "nkə", "tə", "bə", "púsi", "bap", "nòm", "yəŋ", "pú", "fà'"]
+    if any(word in text_lower for word in ghomala_words):
+        return True
+
+    return False
+
+def is_document_related_query(text: str, document_content: str = "") -> bool:
+    """Check if the query is asking about the document content."""
+    if not text:
+        return False
+
+    text_lower = text.lower()
+
+    # Document-related keywords
+    document_keywords = [
+        "document", "text", "file", "pdf", "content", "page", "chapter",
+        "section", "paragraph", "what does", "explain", "summary", "about",
+        "according to", "based on", "in the", "from the", "this document",
+        "the text", "it says", "mentioned", "written", "states", "describes"
+    ]
+
+    return any(keyword in text_lower for keyword in document_keywords)
+
 @app.on_event("startup")
 async def startup_event():
     """Load dictionary on startup."""
@@ -266,6 +311,16 @@ async def query(request: QueryRequest):
         # Extract document content
         document_text = extract_text_from_pdf(request.file_path)
 
+        # Validate if the question is related to the document or translation
+        if not is_document_related_query(request.question, document_text) and not is_translation_related_query(request.question):
+            return {
+                "status": "out_of_scope",
+                "question": request.question,
+                "answer": "I can only answer questions related to the document content or provide translations between Ghomala', French, and English.",
+                "response_language": request.response_language or "English",
+                "document_language": detect_language(document_text)
+            }
+
         # Determine response language
         response_language = request.response_language or detect_language(request.question)
 
@@ -278,7 +333,7 @@ async def query(request: QueryRequest):
 Reference vocabulary and translations:
 {dictionary_content}
 
-Use this knowledge naturally in your responses without mentioning it explicitly."""
+Use this knowledge naturally in your responses without mentioning it explicitly. Only answer questions related to the document content or translation between Ghomala', French, and English."""
             },
             {
                 "role": "user",
@@ -305,6 +360,16 @@ Use this knowledge naturally in your responses without mentioning it explicitly.
 async def translate(request: TranslationRequest):
     """Direct translation endpoint."""
     try:
+        # Validate if this is actually a translation request
+        if not is_translation_related_query(request.text):
+            return {
+                "status": "out_of_scope",
+                "original_text": request.text,
+                "translation": "I can only provide translations between Ghomala', French, and English.",
+                "source_language": request.source_language,
+                "target_language": request.target_language
+            }
+
         # Create translation messages for multilingual model
         messages = [
             {
