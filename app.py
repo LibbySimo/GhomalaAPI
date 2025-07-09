@@ -29,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration
+# Configurationgive me a short summary in ghomala
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXTENSIONS = {".pdf"}
@@ -39,6 +39,7 @@ MODEL = "grok-3"
 
 # Global variable to store dictionary content
 dictionary_content = ""
+
 
 # Pydantic models
 class QueryRequest(BaseModel):
