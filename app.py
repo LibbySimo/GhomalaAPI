@@ -310,6 +310,17 @@ async def query(request: QueryRequest):
     try:
         # Extract document content
         document_text = extract_text_from_pdf(request.file_path)
+        document_language = detect_language(document_text)
+
+        # Check if document is in Ghomala' - only allow queries on Ghomala' documents except for translation
+        if document_language != "Ghomala'" and not is_translation_related_query(request.question):
+            return {
+                "status": "unsupported_document",
+                "question": request.question,
+                "answer": "I can only answer questions about Ghomala' documents. For other documents, I can only provide translation services between Ghomala', French, and English.",
+                "response_language": request.response_language or "English",
+                "document_language": document_language
+            }
 
         # Validate if the question is related to the document or translation
         if not is_document_related_query(request.question, document_text) and not is_translation_related_query(request.question):
@@ -318,7 +329,7 @@ async def query(request: QueryRequest):
                 "question": request.question,
                 "answer": "I can only answer questions related to the document content or provide translations between Ghomala', French, and English.",
                 "response_language": request.response_language or "English",
-                "document_language": detect_language(document_text)
+                "document_language": document_language
             }
 
         # Determine response language
@@ -349,7 +360,7 @@ Use this knowledge naturally in your responses without mentioning it explicitly.
             "question": request.question,
             "answer": answer,
             "response_language": response_language,
-            "document_language": detect_language(document_text)
+            "document_language": document_language
         }
 
     except Exception as e:
