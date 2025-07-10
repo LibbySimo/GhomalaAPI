@@ -232,7 +232,7 @@ def is_translation_related_query(text: str) -> bool:
     return False
 
 def is_document_related_query(text: str, document_content: str = "") -> bool:
-    """Check if the query is asking about the document content."""
+    """Check if the query is asking about the document content AND is Ghomala' related."""
     if not text:
         return False
 
@@ -246,7 +246,11 @@ def is_document_related_query(text: str, document_content: str = "") -> bool:
         "the text", "it says", "mentioned", "written", "states", "describes"
     ]
 
-    return any(keyword in text_lower for keyword in document_keywords)
+    # Only allow document queries if they are also translation-related OR explicitly about Ghomala' content
+    is_doc_query = any(keyword in text_lower for keyword in document_keywords)
+    is_ghomala_related = is_translation_related_query(text) or any(word in text_lower for word in ["ghomala", "ghomàla"])
+
+    return is_doc_query and is_ghomala_related
 
 @app.on_event("startup")
 async def startup_event():
@@ -318,37 +322,37 @@ async def query(request: QueryRequest):
                 "status": "unsupported_document",
                 "question": request.question,
                 "answer": "I can only answer questions about Ghomala' documents. For other documents, I can only provide translation services between Ghomala', French, and English.",
-                "response_language": request.response_language or "English",
+                "response_language": request.response_language or detect_language(request.question),
                 "document_language": document_language
             }
 
-        # Validate if the question is related to the document or translation
-        if not is_document_related_query(request.question, document_text) and not is_translation_related_query(request.question):
+        # Validate if the question is related to translation only (no general document content questions)
+        if not is_translation_related_query(request.question):
             return {
                 "status": "out_of_scope",
                 "question": request.question,
-                "answer": "I can only answer questions related to the document content or provide translations between Ghomala', French, and English.",
-                "response_language": request.response_language or "English",
+                "answer": "I can only provide translations between Ghomala', French, and English. I cannot answer general questions about document content.",
+                "response_language": request.response_language or detect_language(request.question),
                 "document_language": document_language
             }
 
-        # Determine response language
+        # Determine response language - default to question language if not specified
         response_language = request.response_language or detect_language(request.question)
 
         # Create messages for multilingual fine-tuned model
         messages = [
             {
                 "role": "system",
-                "content": f"""You are a multilingual AI assistant fluent in Ghomala', French, and English. You have been fine-tuned to understand and respond naturally in all three languages. Always respond in the requested language ({response_language}) unless specifically asked otherwise.
+                "content": f"""You are a specialized multilingual AI assistant focused exclusively on translations between Ghomala', French, and English. You have been fine-tuned to understand and translate naturally between these three languages. Always respond in the requested language ({response_language}).
 
 Reference vocabulary and translations:
 {dictionary_content}
 
-Use this knowledge naturally in your responses without mentioning it explicitly. Only answer questions related to the document content or translation between Ghomala', French, and English."""
+Use this knowledge naturally in your translations without mentioning it explicitly. Only provide translations - do not answer general questions about document content, formatting, or other topics."""
             },
             {
                 "role": "user",
-                "content": f"""Here is a document:\n\n{document_text}\n\nPlease answer this question in {response_language}: {request.question}"""
+                "content": f"""Here is a document:\n\n{document_text}\n\nPlease provide translation services for this request in {response_language}: {request.question}"""
             }
         ]
 
